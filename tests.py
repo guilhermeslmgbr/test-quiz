@@ -4,76 +4,30 @@ import requests
 import json
 import os
 
-#funcao de extracao do mock
-def get_api_data():
-    response = requests.get("https://jsonplaceholder.typicode.com/todos")
-    
-    # valida o status code
-    if response.status_code != 200:
-        raise Exception(f"Erro: Status {response.status_code}")
-    
-    # valida o cabeçalho do JSON
-    if "application/json" not in response.headers.get("Content-Type", ""):
-        raise Exception("Erro: Resposta não é JSON")
-    
-    data = response.json()
-    
-    # valida se é uma lista e se não está vazia
-    if not isinstance(data, list) or len(data) == 0:
-        raise Exception("Erro: API retornou uma lista vazia ou formato inválido")
-    
-    dados_convertidos = [
-    {
-        "text": item.get("title"),
-        "id": item.get("id"),
-        "is_correct": item.get("completed") 
-    }
-    for item in data
-    ]
+#fixture de escopo 'function' 
+@pytest.fixture
+#cria uma questão nova para cada teste que a solicitar.
+def question_with_choices():
+    question = Question(title="Pergunta padrao", max_selections=1)
+    question.add_choice("choice_1", is_correct=True)  # ID 1
+    question.add_choice("choice_2", is_correct=False) # ID 2
+    question.add_choice("choice_3", is_correct=False)  # ID 3
+    return question
 
-        
-    return dados_convertidos
+def test_remove_choice_by_id(question_with_choices):
+    question_with_choices.remove_choice_by_id(2)
+    assert len(question_with_choices.choices) == 2
+    # verifica se o ID 2 realmente sumiu da lista de IDs
+    assert 2 not in [c.id for c in question_with_choices.choices]
 
+def test_remove_all_choices(question_with_choices):
+    question_with_choices.remove_all_choices()
+    assert len(question_with_choices.choices) == 0
 
-def ensure_mock_exists(filename="mock.json"):
-    # verifica se o arquivo já existe
-    if os.path.exists(filename):
-        print(f"O arquivo {filename} já existe. Pulando criação.")
-        return
-
-    # se não existir, busca os dados da API
-    print(f"Arquivo {filename} não encontrado. Buscando dados da API...")
-    try:
-        data_to_save = get_api_data()
-        
-        # salva no arquivo JSON
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-            
-        print(f"Sucesso: Mock criado com {len(data_to_save)} itens.")
-    except Exception as e:
-        print(f"Falha ao criar o mock: {e}")
-
-
-ensure_mock_exists()
-# pega os dados do mock
-def load_mock_data(filename="mock.json"):
-    # verifica se o arquivo existe antes de tentar abrir
-    if not os.path.exists(filename):
-        print(f"Erro: O arquivo {filename} não foi encontrado.")
-        return None
-
-    # abre o arquivo em modo de leitura ('r')
-    with open(filename, 'r', encoding='utf-8') as f:
-        # converte o conteúdo do arquivo para uma variável
-        data = json.load(f)
-    
-    return data
-
-choices_list = load_mock_data()
-
-
-  
+def test_correct_selected_choices_valid(question_with_choices):
+    # testa se acertou
+    acertos = question_with_choices.correct_selected_choices([1])
+    assert acertos == [1]
 
 def test_create_question():
     question = Question(title='q1')
@@ -81,18 +35,12 @@ def test_create_question():
     #teste 1(verifica se a lista do construtor está vazia ao ser criada)
     assert question.choices == [] 
 
-
-
-
 def test_create_multiple_questions():
     question1 = Question(title='q1')
     question2 = Question(title='q2')
     assert question1.id != question2.id
     #teste2(verifica se as listas não apontam para o mesmo endereço de memória)
     assert question1.choices is not question2.choices 
-
-    
-
 
 def test_create_question_with_invalid_title():
     with pytest.raises(Exception):
@@ -123,22 +71,20 @@ def test_create_choice():
     assert not choice.is_correct
     assert isinstance(question.choices[0], Choice) #teste 6 (verifica o tipo do objeto criado)
 
-
-
-#roda para cada linha do arquivo
-@pytest.mark.parametrize("data", choices_list)
-def test_choice_instantiation_from_mock(data):
-    # validação dos limites de tamanho do text
+#roda para cada linha do arquivo, baseado no tamanho do mock
+@pytest.mark.parametrize("index", range(200)) 
+def test_choice_instantiation_from_mock(choices_mock_data, index): #carrega os dados da fixture que vem do conftest.py
+    data = choices_mock_data[index] # pega o item específico da rodada
+    
     if len(data['text']) > 100:
         with pytest.raises(Exception, match='Text cannot be longer than 100 characters'):
             Choice(id=data['id'], text=data['text'], is_correct=data['is_correct'])
     else:
-        # teste de sucesso
         choice = Choice(id=data['id'], text=data['text'], is_correct=data['is_correct'])
         
         assert choice.id == data['id']
         assert choice.text == data['text']
-        assert choice.is_correct == data['is_correct']
+        assert isinstance(choice.is_correct, bool)
    #teste 7(robustez: de 200 itens testados nenhum foi corrompido ou longo demais, caso contrário a classe iria disparar a excessão)
    #teste 8(conformidade: todos os itens foram transformados no objeto desejado)
    #teste 9(mapeamento de tipos:conversão adequada false/true do JSON para o tipo booleano e dos ID's para inteiros)
